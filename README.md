@@ -1,7 +1,7 @@
 # system
 
 ```shell
-/home/pi/realestate_agent/
+./realestate_agent/
   ├─ report_agent.py (メインスクリプト)
   ├─ .env (APIキーなどの環境変数)
   └─ config/
