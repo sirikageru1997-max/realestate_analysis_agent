@@ -3,7 +3,7 @@
 ```shell
 ./realestate_agent/
   ├─ report_agent.py (メインスクリプト)
-  ├─ .env (APIキーなどの環境変数)
+  ├─ .env (環境変数)
   └─ config/
        ├─ credentials.json (ダウンロードしたファイル)
        ├─ token.json (自動生成されるファイル)
