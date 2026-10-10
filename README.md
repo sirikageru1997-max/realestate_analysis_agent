@@ -1,3 +1,15 @@
+# system
+
+```shell
+/home/pi/realestate_agent/
+  ├─ report_agent.py (メインスクリプト)
+  ├─ .env (APIキーなどの環境変数)
+  └─ config/
+       ├─ credentials.json (ダウンロードしたファイル)
+       ├─ token.json (自動生成されるファイル)
+       └─ token.json.bak (自動バックアップ)
+```
+
 # init enviroment
 
 ```shell
