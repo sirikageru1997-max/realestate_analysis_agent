@@ -5,10 +5,15 @@
   ├─ report_agent.py (メインスクリプト)
   ├─ .env (環境変数)
   └─ config/
-       ├─ credentials.json (ダウンロードしたファイル)
+       ├─ credentials.json (Google Cloud Consoleからダウンロードする「アプリの設定ファイル」)
        ├─ token.json (自動生成されるファイル)
        └─ token.json.bak (自動バックアップ)
 ```
+- token.json の中身のイメージ
+  - 最初に認証したとき、token.json には主に2つの重要なキー（鍵）が保存されます。
+    - token (アクセストークン)：実際の処理（Docs作成やGmail送信など）を行うための鍵。有効期限が短い（例：1時間）。
+    - refresh_token (リフレッシュトークン)：アクセストークンを再発行してもらうための鍵。有効期限が長い（条件によっては無期限）。
+
 
 # init enviroment
 
