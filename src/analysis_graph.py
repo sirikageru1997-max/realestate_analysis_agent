@@ -1,74 +1,153 @@
+import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from matplotlib import rcParams
+import seaborn as sns
+import japanize_matplotlib
 
-# 日本語フォントの設定（OS環境に合わせて変更してください。Google Colabの場合は 'IPAGothic' 等をインストールして指定します）
-rcParams['font.family'] = 'sans-serif'
-rcParams['font.sans-serif'] = ['Hiragino Maru Gothic Pro', 'Yu Gothic', 'Meiryo', 'Takao', 'IPAexGothic', 'IPAPGothic', 'VL PGothic', 'Noto Sans CJK JP']
-
-
-def create_real_estate_scatter_plot(csv_file_path, output_image_path="scatter_plot.png"):
+def create_takuchi_boxplots(CSV_PATH, output_image_path):
     """
-    不動産データのCSVファイルを読み込み、家賃と専有面積の散布図を作成して保存する関数。
-
-    Args:
-        csv_file_path (str): 入力となるCSVファイルのパス
-        output_image_path (str, optional): 出力する画像ファイルのパス. デフォルトは "scatter_plot.png".
+    不動産取引データのCSVを読み込み、外れ値を除外した上で
+    都市計画別・建物構造別の単価の箱ひげ図を作成して保存・表示する関数
+    
+    Parameters:
+    CSV_PATH (str): 読み込むCSVファイルのパス
+    output_image_path (str): 出力する画像ファイルの保存先パス
     """
-    try:
-        # 1. CSVデータの読み込み
-        # データの構造が '候補', '時間', '築年数', '駅', '構造', '階層', '家賃(万)', '専有面積(m2)', ... のようになっていると仮定
-        # 必要に応じて、ヘッダーの有無や列名を指定してください
-        df = pd.read_csv(csv_file_path)
+    
+    # =====================================================================
+    # データ読み込みと前処理
+    # =====================================================================
+    df = pd.read_csv(CSV_PATH, encoding='cp932')
+    df['面積（㎡）'] = pd.to_numeric(df['面積（㎡）'], errors='coerce')
 
-        # 2. 必要な列の抽出とデータクリーニング
-        # ここでは、列名が '家賃' と '専有面積' に似たものを含んでいると仮定しています。
-        # 実際のCSVの列名に合わせて変更してください。
-        # 例: df = pd.read_csv(csv_file_path, header=None, names=['A', 'B', 'C', 'D', 'E', 'F', 'Rent', 'Area', ...])
-        
-        # 仮の処理: 7列目が家賃(万)、8列目が面積(m2)の場合
-        if len(df.columns) >= 8:
-             rent_col = df.columns[6]
-             area_col = df.columns[7]
-        else:
-             print("エラー: CSVの列数が不足しています。")
-             return
-        
-        # 数値データに変換（エラーとなる文字列はNaNにし、その後除外する）
-        df['Rent_num'] = pd.to_numeric(df[rent_col], errors='coerce')
-        df['Area_num'] = pd.to_numeric(df[area_col], errors='coerce')
-        
-        # NaNを含む行を削除
-        df_clean = df.dropna(subset=['Rent_num', 'Area_num'])
+    # --- 1. 単価（㎡）列がない場合の作成例（既にある場合は不要） ---
+    df['単価（㎡）'] = df['取引価格（総額）'] / df['面積（㎡）']
 
-        if df_clean.empty:
-            print("エラー: グラフにプロットできる有効な数値データがありません。")
-            return
+    # --- 2. IQR法による外れ値の算出 ---
+    Q1 = df['単価（㎡）'].quantile(0.25)
+    Q3 = df['単価（㎡）'].quantile(0.75)
+    IQR = Q3 - Q1
 
-        # 3. グラフの作成
-        plt.figure(figsize=(10, 6))
-        plt.scatter(df_clean['Area_num'], df_clean['Rent_num'], color='blue', alpha=0.7)
+    # 適正範囲の定義（1.5倍ルール）
+    lower_bound = Q1 - 1.5 * IQR
+    upper_bound = Q3 + 1.5 * IQR
 
-        # 4. グラフの装飾
-        plt.title('祖師ヶ谷大蔵周辺 物件の専有面積と家賃の関係', fontsize=16)
-        plt.xlabel('専有面積 (m²)', fontsize=14)
-        plt.ylabel('家賃 (万円)', fontsize=14)
-        plt.grid(True, linestyle='--', alpha=0.6)
-        
-        # 5. グラフの保存と表示
-        plt.tight_layout()
-        plt.savefig(output_image_path, dpi=300)
-        plt.show()
-        
-        print(f"散布図を作成し、{output_image_path} に保存しました。")
+    # 外れ値を除外したデータフレームを作成
+    df_clean = df[(df['単価（㎡）'] >= lower_bound) & (df['単価（㎡）'] <= upper_bound)].copy()
+    df = df_clean.copy()
 
-    except FileNotFoundError:
-        print(f"エラー: ファイル '{csv_file_path}' が見つかりません。")
-    except Exception as e:
-        print(f"予期せぬエラーが発生しました: {e}")
+    # 時期データの変換・フィルタリング・ソート
+    quar_str = df['取引時期'].str.replace('年第', 'Q').str.replace('四半期', '')
+    df['sort_key'] = pd.PeriodIndex(quar_str, freq='Q')
+    idx = df['sort_key'] >= '2010Q1'
+    df = df.loc[idx].copy()
+    df.sort_values('sort_key', inplace=True)
 
-# ==========================================
-# 使用例
-# ==========================================
-# csv_file_path = "path/to/your/Odakyu-Odawara line_Soshigaya Okura_20053_20261.csv"
-# create_real_estate_scatter_plot(csv_file_path)
+    # =====================================================================
+    # グラフの描画設定
+    # =====================================================================
+    fig, axes = plt.subplots(2, 1, figsize=(16, 12))
+
+    # 1. 都市計画でグルーピング
+    sns.boxplot(
+        data=df,
+        x='sort_key',
+        y='単価（㎡）',
+        hue='都市計画',
+        showfliers=False,  # 外れ値を非表示にして箱を大きく見せたい場合は True を False に変更
+        ax=axes[0]
+    )
+    axes[0].set_title('都市計画別の取引価格（平均）')
+    axes[0].tick_params(axis='x', rotation=45)
+
+    # 2. 建物の構造でグルーピング
+    sns.boxplot(
+        data=df,
+        x='sort_key',
+        y='単価（㎡）',
+        hue='建物の構造',
+        showfliers=False,  # 外れ値を非表示にして箱を大きく見せたい場合は True を False に変更
+        ax=axes[1]
+    )
+    axes[1].set_title('建物の構造別の取引価格（平均）')
+    axes[1].tick_params(axis='x', rotation=45)
+
+    # レイアウト調整と保存・表示
+    plt.tight_layout()
+    plt.savefig(output_image_path, dpi=300)
+    #plt.show()
+
+def create_takuchi_lineplots(CSV_PATH, output_image_path):
+    """
+    不動産取引データのCSVを読み込み、外れ値を除外した上で
+    都市計画別・建物構造別の単価の箱ひげ図を作成して保存・表示する関数
+    
+    Parameters:
+    CSV_PATH (str): 読み込むCSVファイルのパス
+    output_image_path (str): 出力する画像ファイルの保存先パス
+    """
+    
+    # =====================================================================
+    # データ読み込みと前処理
+    # =====================================================================
+    df = pd.read_csv(CSV_PATH, encoding='cp932')
+    df['面積（㎡）'] = pd.to_numeric(df['面積（㎡）'], errors='coerce')
+
+    # --- 1. 単価（㎡）列がない場合の作成例（既にある場合は不要） ---
+    df['単価（㎡）'] = df['取引価格（総額）'] / df['面積（㎡）']
+
+    # --- 2. IQR法による外れ値の算出 ---
+    Q1 = df['単価（㎡）'].quantile(0.25)
+    Q3 = df['単価（㎡）'].quantile(0.75)
+    IQR = Q3 - Q1
+
+    # 適正範囲の定義（1.5倍ルール）
+    lower_bound = Q1 - 1.5 * IQR
+    upper_bound = Q3 + 1.5 * IQR
+
+    # 外れ値を除外したデータフレームを作成
+    df_clean = df[(df['単価（㎡）'] >= lower_bound) & (df['単価（㎡）'] <= upper_bound)].copy()
+    df = df_clean.copy()
+
+    # 時期データの変換・フィルタリング・ソート
+    quar_str = df['取引時期'].str.replace('年第', 'Q').str.replace('四半期', '')
+    df['sort_key'] = pd.PeriodIndex(quar_str, freq='Q')
+    idx = df['sort_key'] >= '2010Q1'
+    df = df.loc[idx].copy()
+    df.sort_values('sort_key', inplace=True)
+
+    # =====================================================================
+    # グラフの描画設定
+    # =====================================================================
+    fig, axes = plt.subplots(2, 1, figsize=(16, 12))
+
+    # 1. 都市計画でグルーピング
+    sns.lineplot(
+        data=df,
+        x='取引時期',
+        y='単価（㎡）',
+        hue='都市計画',  # または '都市計画'
+        marker='o',       # データ点に丸印を表示
+        errorbar=None,     # 信頼区間（影）を非表示にして平均値の線のみにする
+        ax=axes[0]
+    )
+    axes[0].set_title('都市計画別の取引価格（平均）')
+    axes[0].tick_params(axis='x', rotation=45)
+    
+    # 2. 建物の構造でグルーピング
+    sns.lineplot(
+        data=df,
+        x='取引時期',
+        y='単価（㎡）',
+        hue='建物の構造',  # または '都市計画'
+        marker='o',       # データ点に丸印を表示
+        errorbar=None,     # 信頼区間（影）を非表示にして平均値の線のみにする
+        ax=axes[1]
+    )
+    axes[1].set_title('建物の構造別の取引価格（平均）')
+    axes[1].tick_params(axis='x', rotation=45)
+
+    # レイアウト調整と保存・表示
+    plt.tight_layout()
+    plt.savefig(output_image_path, dpi=300)
+    #plt.show()
